@@ -6,6 +6,7 @@ import Logo from "../assets/logo.svg";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { registerRoute } from "../utils/APIRoutes";
+const RSA = require('hybrid-crypto-js').RSA;
 
 export default function Register() {
   const navigate = useNavigate();
@@ -61,14 +62,24 @@ export default function Register() {
     return true;
   };
 
+  const generateKeys = async () => {
+    let rsa = new RSA();
+    let keyPair = await rsa.generateKeyPairAsync().then((data) => {
+      return data
+    });
+    return keyPair;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (handleValidation()) {
       const { email, username, password } = values;
+      const keyPair = await generateKeys();
       const { data } = await axios.post(registerRoute, {
         username,
         email,
         password,
+        publicKey: keyPair.publicKey
       });
 
       if (data.status === false) {
@@ -78,6 +89,10 @@ export default function Register() {
         localStorage.setItem(
           process.env.REACT_APP_LOCALHOST_KEY,
           JSON.stringify(data.user)
+        );
+        localStorage.setItem(
+          process.env.REACT_APP_PRIVATE_KEY,
+          JSON.stringify(keyPair.privateKey)
         );
         navigate("/");
       }
@@ -90,7 +105,7 @@ export default function Register() {
         <form action="" onSubmit={(event) => handleSubmit(event)}>
           <div className="brand">
             <img src={Logo} alt="logo" />
-            <h1>snappy</h1>
+            <h1>cryptsend</h1>
           </div>
           <input
             type="text"

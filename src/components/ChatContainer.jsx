@@ -5,21 +5,36 @@ import Logout from "./Logout";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { sendMessageRoute, recieveMessageRoute } from "../utils/APIRoutes";
+import { Crypt } from 'hybrid-crypto-js';
+import CryptoJS from 'crypto-js';
+let crypt = new Crypt();
 
 export default function ChatContainer({ currentChat, socket }) {
   const [messages, setMessages] = useState([]);
   const scrollRef = useRef();
   const [arrivalMessage, setArrivalMessage] = useState(null);
 
-  useEffect(async () => {
-    const data = await JSON.parse(
-      localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
-    );
-    const response = await axios.post(recieveMessageRoute, {
-      from: data._id,
-      to: currentChat._id,
-    });
-    setMessages(response.data);
+  useEffect(() => {
+    const getChats = async() => {
+      const data = await JSON.parse(
+        localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
+      );
+      const response = await axios.post(recieveMessageRoute, {
+        from: data._id,
+        to: currentChat._id,
+      });
+
+      const messages = response.data;
+
+      const decryptedMessages = messages.map((item) => {
+        return ({
+          fromSelf: item.fromSelf,
+          message: CryptoJS.AES.decrypt(item.message, process.env.REACT_APP_PASSPHRASE).toString(CryptoJS.enc.Utf8)
+        })
+      })
+      setMessages(decryptedMessages);
+    }
+    getChats();
   }, [currentChat]);
 
   useEffect(() => {
@@ -33,19 +48,27 @@ export default function ChatContainer({ currentChat, socket }) {
     getCurrentChat();
   }, [currentChat]);
 
+  const encryptMessage = async (message) => {
+    let encrypted = crypt.encrypt(currentChat.publicKey, message);
+    return encrypted;
+  }
+
   const handleSendMsg = async (msg) => {
     const data = await JSON.parse(
       localStorage.getItem(process.env.REACT_APP_LOCALHOST_KEY)
     );
+    const encrypted = await encryptMessage(msg);
+
     socket.current.emit("send-msg", {
       to: currentChat._id,
       from: data._id,
-      msg,
+      msg: encrypted
     });
+    console.log(encrypted);
     await axios.post(sendMessageRoute, {
       from: data._id,
       to: currentChat._id,
-      message: msg,
+      message: CryptoJS.AES.encrypt(msg, process.env.REACT_APP_PASSPHRASE).toString(),
     });
 
     const msgs = [...messages];
@@ -53,10 +76,14 @@ export default function ChatContainer({ currentChat, socket }) {
     setMessages(msgs);
   };
 
-  useEffect(() => {
+  useEffect( () => {
     if (socket.current) {
-      socket.current.on("msg-recieve", (msg) => {
-        setArrivalMessage({ fromSelf: false, message: msg });
+      socket.current.on("msg-recieve", async (msg) => {
+        const privateKey = await JSON.parse(
+          localStorage.getItem(process.env.REACT_APP_PRIVATE_KEY)
+        );
+        const decrypted = crypt.decrypt(privateKey, msg);
+        setArrivalMessage({ fromSelf: false, message: decrypted.message });
       });
     }
   }, []);
